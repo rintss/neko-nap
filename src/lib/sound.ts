@@ -11,11 +11,20 @@ let previewTimer: number | undefined;
 
 function ensureContext() {
   if (!ctx) {
-    if (typeof window === "undefined" || !(window.AudioContext || (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext)) return null;
+    if (
+      typeof window === "undefined" ||
+      !(
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext
+      )
+    )
+      return null;
     const nav = navigator as Nav;
     // iOS 17+: play even when the ring/silent switch is on.
     if (nav.audioSession) nav.audioSession.type = "playback";
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     ctx = new Ctx();
     master = ctx.createGain();
     master.connect(ctx.destination);
@@ -76,7 +85,16 @@ export function playPurr(volume: number) {
   src.loop = true;
   src.connect(m);
   src.start();
-  current = { stop: () => { try { src.stop(); } catch { /* already stopped */ } src.disconnect(); } };
+  current = {
+    stop: () => {
+      try {
+        src.stop();
+      } catch {
+        /* already stopped */
+      }
+      src.disconnect();
+    },
+  };
 }
 
 const elementSources = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();

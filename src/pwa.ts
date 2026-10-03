@@ -18,7 +18,11 @@ async function unregisterAppWorker() {
   const registrations = await navigator.serviceWorker.getRegistrations();
   await Promise.allSettled(
     registrations
-      .filter((registration) => new URL(registration.active?.scriptURL ?? APP_SERVICE_WORKER_PATH, window.location.origin).pathname === APP_SERVICE_WORKER_PATH)
+      .filter(
+        (registration) =>
+          new URL(registration.active?.scriptURL ?? APP_SERVICE_WORKER_PATH, window.location.origin)
+            .pathname === APP_SERVICE_WORKER_PATH,
+      )
       .map((registration) => registration.unregister()),
   );
 }
@@ -37,6 +41,9 @@ export async function initializePwa() {
     return;
   }
 
-  const { registerSW } = await import("virtual:pwa-register");
-  registerSW({ immediate: true });
+  try {
+    await navigator.serviceWorker.register(APP_SERVICE_WORKER_PATH, { scope: "/" });
+  } catch {
+    // The timer remains fully usable when service-worker registration is unavailable.
+  }
 }

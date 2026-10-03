@@ -21,6 +21,23 @@ npm i
 npm run dev
 ```
 
+Use `npm run build` for a production verification build. The generated Cloudflare/Nitro bundle is
+written to `.output/`.
+
+## Data and offline behavior
+
+- Active naps, preferences, and nap history are stored locally on the device.
+- Running timers use a persisted absolute wake timestamp, so refreshing the page does not restart
+  the countdown.
+- The app installs its own service worker in production. The interface, cat artwork, and built-in
+  sounds are cached for use after the first successful online load.
+- Custom audio selected from the device is never uploaded or synchronized.
+
+## Source ownership
+
+The cat artwork and built-in sound files live under `public/assets/`. The app no longer depends on
+Lovable asset-pointer URLs, so the repository can be built and hosted independently.
+
 ## Built with
 
 - TanStack Start

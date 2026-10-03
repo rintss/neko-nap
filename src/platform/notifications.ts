@@ -7,7 +7,8 @@ export const wakeAlertReliability = "foreground-only" as const;
 export function triggerWakeAlert() {
   playWakeTone();
   try {
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate([200, 120, 200]);
+    if (typeof navigator !== "undefined" && "vibrate" in navigator)
+      navigator.vibrate([200, 120, 200]);
   } catch {
     /* vibration unsupported (e.g. iOS Safari) */
   }
