@@ -63,10 +63,11 @@ type NapRecord = Omit<NapSession, "status"> & {
 const STORAGE_SESSION = STORAGE_KEYS.session;
 const STORAGE_RECORDS = STORAGE_KEYS.records;
 const STORAGE_STATIC = STORAGE_KEYS.still;
+const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 const BUILT_IN_SOUNDS: Record<Exclude<SoundKind, "silence" | "local">, string> = {
-  purr: "/assets/cat-purring.mp3",
-  rain: "/assets/rain-sound.mp3",
-  ocean: "/assets/ocean-waves.mp3",
+  purr: assetUrl("assets/cat-purring.mp3"),
+  rain: assetUrl("assets/rain-sound.mp3"),
+  ocean: assetUrl("assets/ocean-waves.mp3"),
 };
 
 function safeRead<T>(key: string, fallback: T): T {
@@ -122,10 +123,15 @@ function Cat({
       aria-label={awake ? "安静醒来的猫" : "蜷着睡觉的猫"}
       role="img"
     >
-      <img className="cat-image" src="/assets/neko-nap-cat.png" alt="" draggable={false} />
+      <img
+        className="cat-image"
+        src={assetUrl("assets/neko-nap-cat.png")}
+        alt=""
+        draggable={false}
+      />
       {active && (
         <span className="cat-torso" aria-hidden="true">
-          <img src="/assets/neko-nap-cat.png" alt="" draggable={false} />
+          <img src={assetUrl("assets/neko-nap-cat.png")} alt="" draggable={false} />
         </span>
       )}
     </figure>

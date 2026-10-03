@@ -1,4 +1,5 @@
-const APP_SERVICE_WORKER_PATH = "/sw.js";
+const APP_BASE_URL = import.meta.env.BASE_URL;
+const APP_SERVICE_WORKER_PATH = `${APP_BASE_URL}sw.js`;
 
 function isLovablePreview(hostname: string) {
   return (
@@ -42,7 +43,7 @@ export async function initializePwa() {
   }
 
   try {
-    await navigator.serviceWorker.register(APP_SERVICE_WORKER_PATH, { scope: "/" });
+    await navigator.serviceWorker.register(APP_SERVICE_WORKER_PATH, { scope: APP_BASE_URL });
   } catch {
     // The timer remains fully usable when service-worker registration is unavailable.
   }
