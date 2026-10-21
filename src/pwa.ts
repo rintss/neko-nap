@@ -1,19 +1,6 @@
 const APP_BASE_URL = import.meta.env.BASE_URL;
 const APP_SERVICE_WORKER_PATH = `${APP_BASE_URL}sw.js`;
 
-function isLovablePreview(hostname: string) {
-  return (
-    hostname.startsWith("id-preview--") ||
-    hostname.startsWith("preview--") ||
-    hostname === "lovableproject.com" ||
-    hostname.endsWith(".lovableproject.com") ||
-    hostname === "lovableproject-dev.com" ||
-    hostname.endsWith(".lovableproject-dev.com") ||
-    hostname === "beta.lovable.dev" ||
-    hostname.endsWith(".beta.lovable.dev")
-  );
-}
-
 async function unregisterAppWorker() {
   if (!("serviceWorker" in navigator)) return;
   const registrations = await navigator.serviceWorker.getRegistrations();
@@ -34,7 +21,6 @@ export async function initializePwa() {
   const shouldRefuse =
     !import.meta.env.PROD ||
     window.self !== window.top ||
-    isLovablePreview(window.location.hostname) ||
     new URLSearchParams(window.location.search).get("sw") === "off";
 
   if (shouldRefuse) {

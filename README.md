@@ -39,11 +39,12 @@ bun install
 bun run dev
 ```
 
-Use `bun run lint` and `bun run build` before committing. GitHub Actions deploys `main` to GitHub Pages.
+Use `bun run lint`, `bun run build`, and `bun run smoke` before committing. The smoke check verifies the generated GitHub Pages shell, local media, icons, manifest, and offline worker. GitHub Actions repeats these checks and deploys `main` to GitHub Pages.
 
 ## Stack
 
 - TanStack Start
 - React and TypeScript
 - Tailwind CSS
+- Standard Vite/TanStack/Nitro build configuration
 - GitHub Actions and GitHub Pages

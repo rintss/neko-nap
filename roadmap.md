@@ -18,10 +18,11 @@
 # Cross-platform prep (brief v0.1)
 
 - [x] Stage A audit + platform adapters (storage/audio/notifications)
-- [x] Recover Lovable-hosted artwork/audio into repository-owned assets
+- [x] Recover formerly hosted artwork/audio into repository-owned assets
 - [x] Replace empty PWA precache output with a production service worker and offline app shell
 - [x] Establish an independent Git baseline and clean build/lint verification
 - [x] Establish the owner-controlled GitHub remote and GitHub Pages deployment
 - [x] Refresh README and PWA cache after the independent migration
+- [x] Remove the former platform's build/runtime coupling and add deploy smoke checks
 - [ ] Optional future stage — Capacitor background audio and native wake alarms
 - [ ] Optional future stage — Supabase schema/RLS, auth, and cross-device sync

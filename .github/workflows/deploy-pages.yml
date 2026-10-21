@@ -29,6 +29,8 @@ jobs:
       - run: bun run build
       - name: Normalize prerendered HTML
         run: find .output/public -name '*.html' -print0 | xargs -0 sed -i 's/\x0//g'
+      - name: Smoke-check deploy artifact
+        run: bun run smoke
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
