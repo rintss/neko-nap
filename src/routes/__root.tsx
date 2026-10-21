@@ -81,6 +81,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Neko Nap" },
       { name: "description", content: "安静、无压力的小睡陪伴。" },
       { name: "author", content: "Neko Nap" },
+      { name: "referrer", content: "no-referrer" },
       { name: "theme-color", content: "#f8f0d5" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "default" },
@@ -89,7 +90,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "安静、无压力的小睡陪伴。" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
