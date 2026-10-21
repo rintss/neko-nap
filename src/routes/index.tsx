@@ -1,18 +1,24 @@
 import * as sound from "@/platform/audio";
+import { loadLocalAudio, saveLocalAudio } from "@/platform/local-audio";
 import { triggerWakeAlert } from "@/platform/notifications";
 import { STORAGE_KEYS, newId, readJson, removeKey, writeJson } from "@/platform/storage";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Bell,
+  Check,
   ChevronDown,
   Clock3,
+  Download,
   History,
   Home,
   Music2,
   Pause,
+  Pencil,
   Play,
+  Save,
   Settings2,
   Trash2,
+  Upload,
   Volume2,
   VolumeX,
   X,
@@ -43,6 +49,16 @@ type Outcome = "slept" | "restedAwake" | "couldNotRest" | "unknown";
 type SoundKind = "purr" | "rain" | "ocean" | "silence" | "local";
 type SessionStatus = "running" | "wake";
 
+const NAP_FACTORS = [
+  "本来就很困",
+  "环境舒服",
+  "声音有帮助",
+  "脑子停不下来",
+  "还不够困",
+  "环境有干扰",
+  "身体不舒服",
+] as const;
+
 type NapSession = {
   startedAt: string;
   plannedWakeAt: string;
@@ -58,11 +74,32 @@ type NapRecord = Omit<NapSession, "status"> & {
   actualEndedAt: string;
   outcome: Outcome;
   status: "ended" | "interrupted";
+  factors?: string[];
+  note?: string;
+};
+
+type Preferences = {
+  duration: number;
+  customDuration: number;
+  custom: boolean;
+  nextEnabled: boolean;
+  nextLabel: string;
+  soundKind: SoundKind;
+  volume: number;
+};
+
+type NekoNapBackup = {
+  app: "neko-nap";
+  version: 1;
+  exportedAt: string;
+  records: NapRecord[];
+  preferences: Preferences;
 };
 
 const STORAGE_SESSION = STORAGE_KEYS.session;
 const STORAGE_RECORDS = STORAGE_KEYS.records;
 const STORAGE_STATIC = STORAGE_KEYS.still;
+const STORAGE_PREFERENCES = STORAGE_KEYS.preferences;
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
 const BUILT_IN_SOUNDS: Record<Exclude<SoundKind, "silence" | "local">, string> = {
   purr: assetUrl("assets/cat-purring.mp3"),
@@ -119,7 +156,7 @@ function Cat({
 }) {
   return (
     <figure
-      className={`cat-scene ${active ? "cat-active" : ""} ${still ? "cat-still" : ""}`}
+      className={`cat-scene ${active ? "cat-active" : ""} ${awake ? "cat-awake" : ""} ${still ? "cat-still" : ""}`}
       aria-label={awake ? "安静醒来的猫" : "蜷着睡觉的猫"}
       role="img"
     >
@@ -179,13 +216,48 @@ function NekoNap() {
   const [still, setStill] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [showCheckIn, setShowCheckIn] = useState(false);
+  const [checkInOutcome, setCheckInOutcome] = useState<Outcome | null>(null);
+  const [checkInFactors, setCheckInFactors] = useState<string[]>([]);
+  const [checkInNote, setCheckInNote] = useState("");
+  const [dataMessage, setDataMessage] = useState("");
+  const [audioStorageMessage, setAudioStorageMessage] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    setSession(safeRead<NapSession | null>(STORAGE_SESSION, null));
-    setRecords(safeRead<NapRecord[]>(STORAGE_RECORDS, []));
-    setStill(safeRead(STORAGE_STATIC, false));
-    setHydrated(true);
+    let cancelled = false;
+    void (async () => {
+      const restoredSession = safeRead<NapSession | null>(STORAGE_SESSION, null);
+      const preferences = safeRead<Partial<Preferences>>(STORAGE_PREFERENCES, {});
+      const restoredAudio = await loadLocalAudio().catch(() => null);
+      if (cancelled) return;
+
+      setSession(restoredSession);
+      setRecords(safeRead<NapRecord[]>(STORAGE_RECORDS, []));
+      setStill(safeRead(STORAGE_STATIC, false));
+      setDuration(Math.min(720, Math.max(1, preferences.duration ?? 20)));
+      setCustomDuration(Math.min(720, Math.max(1, preferences.customDuration ?? 60)));
+      setCustom(preferences.custom ?? false);
+      setNextEnabled(preferences.nextEnabled ?? false);
+      setNextLabel(preferences.nextLabel || "出门");
+      setVolume(Math.min(100, Math.max(0, preferences.volume ?? 35)));
+      setLocalAudio(restoredAudio);
+      setSoundKind(
+        preferences.soundKind === "local" && !restoredAudio
+          ? "purr"
+          : (preferences.soundKind ?? "purr"),
+      );
+
+      // Browsers block autoplay after a reload. Make that state explicit and expose
+      // the resume control instead of pretending the saved sound is still playing.
+      if (restoredSession?.status === "running") {
+        setAudioPaused(true);
+        setShowControls(true);
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -205,6 +277,20 @@ function NekoNap() {
   }, [records, hydrated]);
 
   useEffect(() => {
+    if (!hydrated) return;
+    const preferences: Preferences = {
+      duration,
+      customDuration,
+      custom,
+      nextEnabled,
+      nextLabel,
+      soundKind,
+      volume,
+    };
+    writeJson(STORAGE_PREFERENCES, preferences);
+  }, [custom, customDuration, duration, hydrated, nextEnabled, nextLabel, soundKind, volume]);
+
+  useEffect(() => {
     if (!session || session.status !== "running") return;
     if (new Date(session.plannedWakeAt).getTime() <= now) {
       stopRestAudio();
@@ -219,6 +305,95 @@ function NekoNap() {
     ? Math.round((new Date(nextAt).getTime() - wakeAt.getTime()) / 60_000)
     : null;
 
+  function currentPreferences(): Preferences {
+    return {
+      duration,
+      customDuration,
+      custom,
+      nextEnabled,
+      nextLabel,
+      soundKind,
+      volume,
+    };
+  }
+
+  function exportBackup() {
+    const backup: NekoNapBackup = {
+      app: "neko-nap",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      records,
+      preferences: currentPreferences(),
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `neko-nap-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setDataMessage(`已导出 ${records.length} 条记录。自选音频不会写入备份。`);
+  }
+
+  function validRecord(value: unknown): value is NapRecord {
+    if (!value || typeof value !== "object") return false;
+    const record = value as Partial<NapRecord>;
+    return (
+      typeof record.id === "string" &&
+      typeof record.startedAt === "string" &&
+      typeof record.plannedWakeAt === "string" &&
+      typeof record.actualEndedAt === "string" &&
+      typeof record.plannedMinutes === "number" &&
+      ["slept", "restedAwake", "couldNotRest", "unknown"].includes(record.outcome ?? "")
+    );
+  }
+
+  async function importBackup(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as Partial<NekoNapBackup>;
+      if (parsed.app !== "neko-nap" || parsed.version !== 1 || !Array.isArray(parsed.records))
+        throw new Error("这不是 Neko Nap v1 备份");
+      const imported = parsed.records.filter(validRecord);
+      if (imported.length !== parsed.records.length) throw new Error("备份中有无法识别的记录");
+      if (
+        !window.confirm(
+          `将导入 ${imported.length} 条记录。相同 ID 的记录会以备份版本为准，其余记录会保留。继续吗？`,
+        )
+      )
+        return;
+
+      setRecords((current) => {
+        const merged = new Map(current.map((record) => [record.id, record]));
+        imported.forEach((record) => merged.set(record.id, record));
+        return [...merged.values()].sort(
+          (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        );
+      });
+
+      const preferences = parsed.preferences;
+      if (preferences && typeof preferences === "object") {
+        if (Number.isFinite(preferences.duration))
+          setDuration(Math.min(720, Math.max(1, preferences.duration!)));
+        if (Number.isFinite(preferences.customDuration))
+          setCustomDuration(Math.min(720, Math.max(1, preferences.customDuration!)));
+        if (typeof preferences.custom === "boolean") setCustom(preferences.custom);
+        if (typeof preferences.nextEnabled === "boolean") setNextEnabled(preferences.nextEnabled);
+        if (typeof preferences.nextLabel === "string") setNextLabel(preferences.nextLabel);
+        if (Number.isFinite(preferences.volume))
+          setVolume(Math.min(100, Math.max(0, preferences.volume!)));
+        if (["purr", "rain", "ocean", "silence", "local"].includes(preferences.soundKind))
+          setSoundKind(
+            preferences.soundKind === "local" && !localAudio ? "purr" : preferences.soundKind,
+          );
+      }
+      setDataMessage(`导入完成：已读取 ${imported.length} 条记录。`);
+    } catch (error) {
+      setDataMessage(error instanceof Error ? `无法导入：${error.message}` : "无法读取这个备份。");
+    }
+  }
+
   function getAudioElement(kind: SoundKind = soundKind) {
     if (kind === "silence") return null;
     const source =
@@ -227,7 +402,10 @@ function NekoNap() {
           ? URL.createObjectURL(localAudio)
           : ""
         : BUILT_IN_SOUNDS[kind];
-    const identity = kind === "local" ? (localAudio?.name ?? "") : kind;
+    const identity =
+      kind === "local"
+        ? `${localAudio?.name ?? ""}:${localAudio?.size ?? 0}:${localAudio?.lastModified ?? 0}`
+        : kind;
     if (!source) return null;
     if (!audioRef.current || audioRef.current.dataset["name"] !== identity) {
       audioRef.current?.pause();
@@ -281,13 +459,13 @@ function NekoNap() {
     setSession({ ...session, status: "wake" });
   }
 
-  function saveOutcome(outcome: Outcome) {
+  function saveOutcome(outcome: Outcome, factors: string[] = [], note = "") {
     if (!session) return;
     setRecords((current) => {
       const existing = current.find((record) => record.startedAt === session.startedAt);
       if (existing)
         return current.map((record) =>
-          record.id === existing.id ? { ...record, outcome } : record,
+          record.id === existing.id ? { ...record, outcome, factors, note: note.trim() } : record,
         );
       return [
         {
@@ -296,12 +474,17 @@ function NekoNap() {
           actualEndedAt: new Date().toISOString(),
           outcome,
           status: "ended",
+          factors,
+          note: note.trim(),
         },
         ...current,
       ];
     });
     setSession(null);
     setShowCheckIn(false);
+    setCheckInOutcome(null);
+    setCheckInFactors([]);
+    setCheckInNote("");
     setView("history");
   }
 
@@ -323,6 +506,12 @@ function NekoNap() {
       <HistoryView
         records={records}
         onDelete={(id) => setRecords((items) => items.filter((item) => item.id !== id))}
+        onUpdate={(updated) =>
+          setRecords((items) => items.map((item) => (item.id === updated.id ? updated : item)))
+        }
+        onExport={exportBackup}
+        onImport={importBackup}
+        dataMessage={dataMessage}
         onHome={() => setView("home")}
       />
     );
@@ -412,14 +601,50 @@ function NekoNap() {
           ) : (
             <div className="check-in animate-fade-in">
               <p>刚才感觉怎么样？</p>
-              <button type="button" onClick={() => saveOutcome("slept")}>
+              <button
+                className={checkInOutcome === "slept" ? "check-choice-selected" : ""}
+                type="button"
+                onClick={() => setCheckInOutcome("slept")}
+              >
                 睡着了
               </button>
-              <button type="button" onClick={() => saveOutcome("restedAwake")}>
+              <button
+                className={checkInOutcome === "restedAwake" ? "check-choice-selected" : ""}
+                type="button"
+                onClick={() => setCheckInOutcome("restedAwake")}
+              >
                 清醒地休息了
               </button>
-              <button type="button" onClick={() => saveOutcome("couldNotRest")}>
+              <button
+                className={checkInOutcome === "couldNotRest" ? "check-choice-selected" : ""}
+                type="button"
+                onClick={() => setCheckInOutcome("couldNotRest")}
+              >
                 没休息下来
+              </button>
+              <div className="check-in-details">
+                <span>有什么影响了这次休息？（可选）</span>
+                <FactorPicker selected={checkInFactors} onChange={setCheckInFactors} />
+                <label className="field">
+                  <span>随手记一点（可选）</span>
+                  <textarea
+                    rows={3}
+                    maxLength={500}
+                    value={checkInNote}
+                    placeholder="例如：楼上有声音，但猫呼噜很有帮助"
+                    onChange={(event) => setCheckInNote(event.target.value)}
+                  />
+                </label>
+              </div>
+              <button
+                className="primary-button check-in-save"
+                type="button"
+                disabled={!checkInOutcome}
+                onClick={() =>
+                  checkInOutcome && saveOutcome(checkInOutcome, checkInFactors, checkInNote)
+                }
+              >
+                <Save size={17} /> 保存记录
               </button>
               <button className="text-button" type="button" onClick={() => saveOutcome("unknown")}>
                 跳过
@@ -613,11 +838,18 @@ function NekoNap() {
                 if (file) {
                   setLocalAudio(file);
                   setSoundKind("local");
+                  setAudioStorageMessage("正在保存到这台设备…");
+                  void saveLocalAudio(file)
+                    .then(() => setAudioStorageMessage("已保存在这台设备，下次打开仍可使用。"))
+                    .catch(() =>
+                      setAudioStorageMessage("浏览器空间不足，音频仅在本次打开期间可用。"),
+                    );
                 }
               }}
             />
           </label>
         </div>
+        {audioStorageMessage && <p className="field-hint">{audioStorageMessage}</p>}
         {soundKind !== "silence" && (
           <label className="volume-control">
             <Volume2 size={18} />
@@ -679,17 +911,63 @@ function NekoNap() {
   );
 }
 
+function FactorPicker({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (factors: string[]) => void;
+}) {
+  return (
+    <div className="factor-picker">
+      {NAP_FACTORS.map((factor) => {
+        const active = selected.includes(factor);
+        return (
+          <button
+            key={factor}
+            className={active ? "factor-chip factor-chip-selected" : "factor-chip"}
+            type="button"
+            aria-pressed={active}
+            onClick={() =>
+              onChange(active ? selected.filter((item) => item !== factor) : [...selected, factor])
+            }
+          >
+            {active && <Check size={13} />}
+            {factor}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function HistoryView({
   records,
   onDelete,
+  onUpdate,
+  onExport,
+  onImport,
+  dataMessage,
   onHome,
 }: {
   records: NapRecord[];
   onDelete: (id: string) => void;
+  onUpdate: (record: NapRecord) => void;
+  onExport: () => void;
+  onImport: (file: File) => Promise<void>;
+  dataMessage: string;
   onHome: () => void;
 }) {
+  const [editing, setEditing] = useState<NapRecord | null>(null);
   const known = records.filter((record) => record.outcome !== "unknown");
   const slept = known.filter((record) => record.outcome === "slept").length;
+  const factorCounts = records
+    .flatMap((record) => record.factors ?? [])
+    .reduce<Record<string, number>>((counts, factor) => {
+      counts[factor] = (counts[factor] ?? 0) + 1;
+      return counts;
+    }, {});
+  const topFactor = Object.entries(factorCounts).sort((a, b) => b[1] - a[1])[0];
   return (
     <main className="app-shell history-screen">
       <header className="history-header">
@@ -699,6 +977,24 @@ function HistoryView({
         </div>
         <span className="history-count">{records.length} 次</span>
       </header>
+      <section className="data-tools" aria-label="备份与恢复">
+        <button className="soft-control" type="button" onClick={onExport}>
+          <Download size={17} /> 导出备份
+        </button>
+        <label className="soft-control import-control">
+          <Upload size={17} /> 导入备份
+          <input
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onImport(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+      </section>
+      {dataMessage && <p className="data-message">{dataMessage}</p>}
       {records.length === 0 ? (
         <div className="empty-history">
           <Cat still />
@@ -731,29 +1027,102 @@ function HistoryView({
                 silence: "安静",
               }[record.soundKind];
               return (
-                <article className="record-row" key={record.id}>
-                  <div className="record-date">
-                    <strong>{new Date(record.startedAt).getDate()}</strong>
-                    <span>
-                      {new Intl.DateTimeFormat(undefined, { month: "short" }).format(
-                        new Date(record.startedAt),
+                <div className="record-block" key={record.id}>
+                  <article className="record-row">
+                    <div className="record-date">
+                      <strong>{new Date(record.startedAt).getDate()}</strong>
+                      <span>
+                        {new Intl.DateTimeFormat(undefined, { month: "short" }).format(
+                          new Date(record.startedAt),
+                        )}
+                      </span>
+                    </div>
+                    <div className="record-main">
+                      <h2>{outcome}</h2>
+                      <p>
+                        {formatDate(record.startedAt)} · {actual}/{record.plannedMinutes} 分钟
+                      </p>
+                      <span>
+                        {soundLabel}
+                        {record.nextThingLabel ? ` · ${record.nextThingLabel}` : ""}
+                      </span>
+                      {(record.factors?.length ?? 0) > 0 && (
+                        <span className="record-factors">{record.factors!.join(" · ")}</span>
                       )}
-                    </span>
-                  </div>
-                  <div className="record-main">
-                    <h2>{outcome}</h2>
-                    <p>
-                      {formatDate(record.startedAt)} · {actual}/{record.plannedMinutes} 分钟
-                    </p>
-                    <span>
-                      {soundLabel}
-                      {record.nextThingLabel ? ` · ${record.nextThingLabel}` : ""}
-                    </span>
-                  </div>
-                  <IconButton label="删除记录" onClick={() => onDelete(record.id)}>
-                    <Trash2 size={17} />
-                  </IconButton>
-                </article>
+                      {record.note && <span className="record-note">{record.note}</span>}
+                    </div>
+                    <div className="record-actions">
+                      <IconButton
+                        label="编辑记录"
+                        onClick={() => setEditing(editing?.id === record.id ? null : { ...record })}
+                      >
+                        <Pencil size={16} />
+                      </IconButton>
+                      <IconButton
+                        label="删除记录"
+                        onClick={() => {
+                          if (window.confirm("删除这条 nap 记录吗？此操作无法撤销。"))
+                            onDelete(record.id);
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </IconButton>
+                    </div>
+                  </article>
+                  {editing?.id === record.id && (
+                    <section className="record-editor animate-fade-in" aria-label="编辑记录">
+                      <label className="field">
+                        <span>休息结果</span>
+                        <select
+                          value={editing.outcome}
+                          onChange={(event) =>
+                            setEditing({ ...editing, outcome: event.target.value as Outcome })
+                          }
+                        >
+                          <option value="slept">睡着了</option>
+                          <option value="restedAwake">清醒地休息了</option>
+                          <option value="couldNotRest">没休息下来</option>
+                          <option value="unknown">未记录感受</option>
+                        </select>
+                      </label>
+                      <div className="field">
+                        <span>影响因素</span>
+                        <FactorPicker
+                          selected={editing.factors ?? []}
+                          onChange={(factors) => setEditing({ ...editing, factors })}
+                        />
+                      </div>
+                      <label className="field">
+                        <span>备注</span>
+                        <textarea
+                          rows={3}
+                          maxLength={500}
+                          value={editing.note ?? ""}
+                          onChange={(event) => setEditing({ ...editing, note: event.target.value })}
+                        />
+                      </label>
+                      <div className="editor-actions">
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => setEditing(null)}
+                        >
+                          取消
+                        </button>
+                        <button
+                          className="primary-button"
+                          type="button"
+                          onClick={() => {
+                            onUpdate({ ...editing, note: editing.note?.trim() });
+                            setEditing(null);
+                          }}
+                        >
+                          <Save size={16} /> 保存修改
+                        </button>
+                      </div>
+                    </section>
+                  )}
+                </div>
               );
             })}
           </section>
@@ -764,8 +1133,11 @@ function HistoryView({
             ) : (
               <p>
                 在 {known.length} 次有感受记录的小睡里，你有{" "}
-                {Math.round((slept / known.length) * 100)}%
-                睡着了。这只是描述，不代表因果或健康建议。
+                {Math.round((slept / known.length) * 100)}% 睡着了。
+                {topFactor && topFactor[1] >= 2
+                  ? ` 最近最常记录的影响因素是“${topFactor[0]}”（${topFactor[1]} 次）。`
+                  : ""}
+                这只是描述，不代表因果或健康建议。
               </p>
             )}
           </section>

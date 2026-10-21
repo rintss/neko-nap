@@ -1,4 +1,4 @@
-const CACHE_NAME = "neko-nap-offline-v2";
+const CACHE_NAME = "neko-nap-offline-v3";
 const APP_ROOT = new URL("./", self.location.href).pathname;
 const appUrl = (path = "") => `${APP_ROOT}${path}`;
 const CORE_URLS = [

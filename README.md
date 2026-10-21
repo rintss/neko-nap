@@ -1,46 +1,49 @@
-# Welcome to your Lovable project
+# Neko Nap
 
-This project was built with [Lovable](https://lovable.dev).
+A gentle, local-first nap companion with ambient audio, an optional next-event buffer, wake check-ins, and a private on-device nap history.
 
-## Build with Lovable
+**Live app:** https://rintss.github.io/neko-nap/
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+## Current features
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- 20, 45, and 90 minute presets plus a 1–720 minute custom timer
+- Optional next-event label, date/time, and preparation-buffer warning
+- Built-in purr, rain, and ocean audio, silence, or a device-selected audio file
+- Persisted absolute wake timestamps, so refreshing does not restart a nap
+- Wake check-in with outcome, optional factors, and a short note
+- Editable and deletable local nap history with cautious pattern summaries
+- JSON backup export and non-destructive import
+- Remembered timer, sound, volume, and next-event preferences
+- Home-screen metadata and offline caching for the core app and built-in media
+- Reduced-motion support and a manual static-cat control
+
+## Privacy and storage
+
+- Active naps, preferences, and history stay in browser storage on this device.
+- A selected custom audio file is stored in IndexedDB when the browser has enough space. It is never uploaded or included in JSON backups.
+- Importing a backup merges by record ID. Matching IDs use the imported version; unrelated existing records remain.
+- There are no accounts, analytics, or cloud synchronization.
+
+## Browser limitations
+
+- The web app cannot guarantee an alarm after iOS locks or suspends the page. Use a device alarm when waking at an exact time matters.
+- After a page reload, browsers block automatic audio playback. Neko Nap restores the timer and exposes a **Continue sound** control.
+- Reliable background audio, lock-screen alarms, and system notifications require a future native Capacitor build.
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+git clone https://github.com/rintss/neko-nap.git
+cd neko-nap
+bun install
+bun run dev
 ```
 
-Use `npm run build` for a production verification build. The generated Cloudflare/Nitro bundle is
-written to `.output/`.
+Use `bun run lint` and `bun run build` before committing. GitHub Actions deploys `main` to GitHub Pages.
 
-## Data and offline behavior
-
-- Active naps, preferences, and nap history are stored locally on the device.
-- Running timers use a persisted absolute wake timestamp, so refreshing the page does not restart
-  the countdown.
-- The app installs its own service worker in production. The interface, cat artwork, and built-in
-  sounds are cached for use after the first successful online load.
-- Custom audio selected from the device is never uploaded or synchronized.
-
-## Source ownership
-
-The cat artwork and built-in sound files live under `public/assets/`. The app no longer depends on
-Lovable asset-pointer URLs, so the repository can be built and hosted independently.
-
-## Built with
+## Stack
 
 - TanStack Start
-- TypeScript
-- React
+- React and TypeScript
 - Tailwind CSS
+- GitHub Actions and GitHub Pages

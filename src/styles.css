@@ -77,7 +77,9 @@
     font-family: var(--font-sans);
   }
   button,
-  input {
+  input,
+  select,
+  textarea {
     font: inherit;
     letter-spacing: 0;
   }
@@ -85,9 +87,15 @@
     cursor: pointer;
   }
   button:focus-visible,
-  input:focus-visible {
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
     outline: 3px solid color-mix(in oklab, var(--ring) 55%, transparent);
     outline-offset: 2px;
+  }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
   }
 }
 
@@ -112,6 +120,17 @@
   }
   50% {
     transform: scale(1.012);
+  }
+}
+@keyframes cat-wake {
+  0% {
+    transform: translateY(4px) rotate(-1deg) scale(0.98);
+  }
+  55% {
+    transform: translateY(-4px) rotate(1deg) scale(1.02);
+  }
+  100% {
+    transform: translateY(0) rotate(0) scale(1);
   }
 }
 
@@ -239,7 +258,9 @@
   font-size: 0.76rem;
   font-weight: 700;
 }
-.field input {
+.field input,
+.field select,
+.field textarea {
   width: 100%;
   min-height: 48px;
   border: 1px solid var(--input);
@@ -247,6 +268,10 @@
   background: var(--card);
   color: var(--foreground);
   padding: 10px 12px;
+}
+.field textarea {
+  resize: vertical;
+  line-height: 1.45;
 }
 .duration-grid + .field {
   margin-top: 12px;
@@ -502,6 +527,9 @@
 .cat-still .cat-torso img {
   animation: none;
 }
+.cat-awake:not(.cat-still) .cat-image {
+  animation: cat-wake 1.15s ease-out both;
+}
 .quiet-time {
   display: flex;
   align-items: baseline;
@@ -620,6 +648,57 @@
   background: var(--card);
   color: var(--foreground);
 }
+.check-in > button.check-choice-selected {
+  border-color: var(--sage-dark);
+  background: color-mix(in oklab, var(--sage) 55%, var(--card));
+  color: var(--sage-dark);
+  font-weight: 800;
+}
+.check-in-details {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--paper-line);
+}
+.check-in-details > span {
+  color: var(--muted-foreground);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.factor-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.factor-chip {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+.factor-chip-selected {
+  border-color: var(--sage-dark);
+  background: var(--sage);
+  color: var(--sage-dark);
+  font-weight: 800;
+}
+.check-in > button.check-in-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 6px;
+  border: 0;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
 
 .history-header {
   display: flex;
@@ -634,6 +713,22 @@
 .history-count {
   color: var(--muted-foreground);
   font-size: 0.8rem;
+}
+.data-tools {
+  display: flex;
+  gap: 8px;
+  padding: 16px 0 4px;
+}
+.import-control {
+  cursor: pointer;
+}
+.import-control input {
+  display: none;
+}
+.data-message {
+  margin: 8px 0 2px;
+  color: var(--sage-dark);
+  font-size: 0.78rem;
 }
 .empty-history {
   min-height: 58svh;
@@ -659,11 +754,15 @@
 }
 .record-row {
   display: grid;
-  grid-template-columns: 48px 1fr 42px;
+  grid-template-columns: 48px 1fr auto;
   gap: 14px;
   align-items: center;
   padding: 19px 0;
   border-bottom: 1px solid var(--paper-line);
+}
+.record-actions {
+  display: grid;
+  gap: 5px;
 }
 .record-date {
   width: 46px;
@@ -700,6 +799,34 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.record-main .record-factors {
+  margin-top: 7px;
+  color: var(--sage-dark);
+}
+.record-main .record-note {
+  margin-top: 6px;
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.4;
+}
+.record-editor {
+  display: grid;
+  gap: 16px;
+  margin: -1px 0 12px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--card) 86%, transparent);
+}
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.editor-actions .primary-button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 .patterns {
   margin-top: 28px;

@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   session: "neko-nap-session-v1",
   records: "neko-nap-records-v1",
   still: "neko-nap-static-v1",
+  preferences: "neko-nap-preferences-v1",
 } as const;
 
 function store(): Storage | null {

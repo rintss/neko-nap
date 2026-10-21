@@ -9,6 +9,11 @@
 - [x] Add guarded offline support for the core local-first nap flow.
 - [x] Redraw the cat in an original bold-line, flat-color sketch style.
 - [x] Replace the synthesized purr and add looping rain and ocean recordings.
+- [x] Add optional nap factors and notes to the wake check-in.
+- [x] Add editing and guarded deletion for history records.
+- [x] Add JSON backup export and non-destructive import.
+- [x] Remember common timer, event, sound, and volume preferences.
+- [x] Persist custom device audio in IndexedDB when browser storage permits.
 
 # Cross-platform prep (brief v0.1)
 
@@ -16,6 +21,7 @@
 - [x] Recover Lovable-hosted artwork/audio into repository-owned assets
 - [x] Replace empty PWA precache output with a production service worker and offline app shell
 - [x] Establish an independent Git baseline and clean build/lint verification
-- [ ] Checkpoint A — owner supplies the intended GitHub remote + own Supabase project
-- [ ] Stage B schema/RLS — blocked on Checkpoint A + migration approval
-- [ ] Stage C auth & sync, Stage D README/PWA review
+- [x] Establish the owner-controlled GitHub remote and GitHub Pages deployment
+- [x] Refresh README and PWA cache after the independent migration
+- [ ] Optional future stage — Capacitor background audio and native wake alarms
+- [ ] Optional future stage — Supabase schema/RLS, auth, and cross-device sync
