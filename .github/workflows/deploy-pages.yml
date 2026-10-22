@@ -31,8 +31,6 @@ jobs:
         run: find .output/public -name '*.html' -print0 | xargs -0 sed -i 's/\x0//g'
       - name: Smoke-check deploy artifact
         run: bun run smoke
-      - name: Install browser for interaction tests
-        run: bunx playwright install --with-deps chromium
       - name: Test the complete nap flow
         run: bun run test:e2e
       - uses: actions/configure-pages@v5

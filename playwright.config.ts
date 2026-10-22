@@ -20,7 +20,10 @@ export default defineConfig({
   projects: [
     {
       name: "mobile-chromium",
-      use: { ...devices["Pixel 7"] },
+      use: {
+        ...devices["Pixel 7"],
+        ...(process.env["CI"] ? { channel: "chrome" as const } : {}),
+      },
     },
   ],
 });
