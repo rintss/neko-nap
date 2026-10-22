@@ -11,11 +11,11 @@ A gentle, local-first nap companion with ambient audio, an optional next-event b
 - Built-in purr, rain, and ocean audio, silence, or a device-selected audio file
 - Persisted absolute wake timestamps, so refreshing does not restart a nap
 - Wake check-in with outcome, optional factors, and a short note
-- Editable and deletable local nap history with cautious pattern summaries
+- Editable and deletable local nap history, including corrected start time and durations
 - JSON backup export and non-destructive import
 - Strict backup validation plus a clear warning if browser storage is blocked or full
 - Remembered timer, sound, volume, and next-event preferences
-- Home-screen metadata and offline caching for the core app and built-in media
+- In-app install guidance plus offline caching for the core app and built-in media
 - Reduced-motion support and a manual static-cat control
 
 ## Privacy and storage
@@ -41,7 +41,7 @@ bun install
 bun run dev
 ```
 
-Use `bun run lint`, `bun run build`, `bun run smoke`, and `bun run test:e2e` before committing. The artifact smoke check verifies the generated GitHub Pages shell, local media, icons, manifest, and offline worker. Playwright covers the mobile nap/check-in/history flow, malformed backup rejection, hidden-control accessibility, and blocked-storage warning. GitHub Actions runs both suites before deploying `main` to GitHub Pages.
+Use `bun run lint`, `bun run build`, `bun run smoke`, and `bun run test:e2e` before committing. The artifact smoke check verifies the generated GitHub Pages shell, local media, icons, manifest, and offline worker. Playwright covers the mobile nap/check-in/history flow, history corrections, malformed backup rejection, hidden-control accessibility, blocked-storage warning, and a true offline reload. GitHub Actions runs both suites before deploying `main` to GitHub Pages.
 
 ## Stack
 

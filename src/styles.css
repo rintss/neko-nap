@@ -401,6 +401,63 @@
 .reliability-note strong {
   color: var(--foreground);
 }
+.install-card {
+  margin: -4px 0 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--card) 82%, transparent);
+}
+.install-card summary {
+  min-height: 50px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.install-card summary::-webkit-details-marker {
+  display: none;
+}
+.install-card summary > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.install-card summary svg {
+  color: var(--sage-dark);
+}
+.offline-status {
+  color: var(--sage-dark);
+  font-size: 0.69rem;
+}
+.offline-status-active {
+  color: var(--destructive);
+}
+.install-card-body {
+  display: grid;
+  gap: 11px;
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--paper-line);
+}
+.install-card-body p {
+  margin: 13px 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.install-card-body small {
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+.install-card-body .soft-control {
+  justify-self: start;
+}
 .storage-warning {
   width: min(100%, 676px);
   margin: 14px auto 4px;
@@ -834,6 +891,11 @@
   border: 1px solid var(--border);
   background: color-mix(in oklab, var(--card) 86%, transparent);
 }
+.record-time-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(2, minmax(110px, 0.8fr));
+  gap: 12px;
+}
 .editor-actions {
   display: flex;
   justify-content: flex-end;
@@ -887,6 +949,9 @@
     font-size: 1.3rem;
   }
   .event-fields {
+    grid-template-columns: 1fr;
+  }
+  .record-time-grid {
     grid-template-columns: 1fr;
   }
   .buffer-note {

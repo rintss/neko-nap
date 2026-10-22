@@ -17,6 +17,7 @@ import {
   Play,
   Save,
   Settings2,
+  Smartphone,
   Trash2,
   Upload,
   Volume2,
@@ -95,6 +96,11 @@ type NekoNapBackup = {
   records: NapRecord[];
   preferences: Preferences;
   still?: boolean;
+};
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
 const STORAGE_SESSION = STORAGE_KEYS.session;
@@ -296,6 +302,10 @@ function NekoNap() {
   const [dataMessage, setDataMessage] = useState("");
   const [audioStorageMessage, setAudioStorageMessage] = useState("");
   const [storageMessage, setStorageMessage] = useState("");
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [offlineReady, setOfflineReady] = useState(false);
+  const [online, setOnline] = useState(true);
+  const [installed, setInstalled] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   function noteStorageResult(saved: boolean) {
@@ -345,6 +355,43 @@ function NekoNap() {
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
+    const updateNetwork = () => setOnline(navigator.onLine);
+    const updateInstalled = () =>
+      setInstalled(
+        window.matchMedia("(display-mode: standalone)").matches ||
+          standaloneNavigator.standalone === true,
+      );
+    const captureInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const markInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+
+    updateNetwork();
+    updateInstalled();
+    window.addEventListener("online", updateNetwork);
+    window.addEventListener("offline", updateNetwork);
+    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    window.addEventListener("appinstalled", markInstalled);
+    void navigator.serviceWorker?.ready.then(() => {
+      if (!cancelled) setOfflineReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", updateNetwork);
+      window.removeEventListener("offline", updateNetwork);
+      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+      window.removeEventListener("appinstalled", markInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -592,6 +639,8 @@ function NekoNap() {
       />
     );
   }
+
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 
   if (session?.status === "running") {
     return (
@@ -977,6 +1026,45 @@ function NekoNap() {
         </p>
       </aside>
 
+      <details className="install-card">
+        <summary>
+          <span>
+            <Smartphone size={18} />
+            安装与离线
+          </span>
+          <strong className={!online ? "offline-status offline-status-active" : "offline-status"}>
+            {!online ? "正在离线使用" : offlineReady ? "已可离线" : "准备中"}
+          </strong>
+        </summary>
+        <div className="install-card-body">
+          {installed ? (
+            <p>已经从主屏幕打开；核心计时、声音和记录都可在离线时继续使用。</p>
+          ) : installPrompt ? (
+            <>
+              <p>安装后可以像普通 App 一样从主屏幕打开。</p>
+              <button
+                className="soft-control"
+                type="button"
+                onClick={() => {
+                  const prompt = installPrompt;
+                  setInstallPrompt(null);
+                  void prompt.prompt().then(() => prompt.userChoice);
+                }}
+              >
+                <Download size={17} /> 安装到设备
+              </button>
+            </>
+          ) : (
+            <p>
+              {isIos
+                ? "请用 Safari 打开，点分享按钮，再选“添加到主屏幕”。"
+                : "打开浏览器菜单，选择“安装应用”或“添加到主屏幕”。"}
+            </p>
+          )}
+          <small>安装不会创建账号；记录仍只保存在这个设备和浏览器，换设备前请先导出备份。</small>
+        </div>
+      </details>
+
       <button className="primary-button start-button" type="button" onClick={startNap}>
         <span>开始 nap</span>
         <span>{formatTime(wakeAt)} 醒来</span>
@@ -1159,6 +1247,86 @@ function HistoryView({
                   </article>
                   {editing?.id === record.id && (
                     <section className="record-editor animate-fade-in" aria-label="编辑记录">
+                      <div className="record-time-grid">
+                        <label className="field">
+                          <span>开始时间</span>
+                          <input
+                            type="datetime-local"
+                            value={localInputValue(new Date(editing.startedAt))}
+                            onChange={(event) => {
+                              const nextStart = new Date(event.target.value).getTime();
+                              const previousStart = new Date(editing.startedAt).getTime();
+                              if (!Number.isFinite(nextStart)) return;
+                              const delta = nextStart - previousStart;
+                              setEditing({
+                                ...editing,
+                                startedAt: new Date(nextStart).toISOString(),
+                                plannedWakeAt: new Date(
+                                  nextStart + editing.plannedMinutes * 60_000,
+                                ).toISOString(),
+                                actualEndedAt: new Date(
+                                  new Date(editing.actualEndedAt).getTime() + delta,
+                                ).toISOString(),
+                                nextThingAt: editing.nextThingAt
+                                  ? new Date(
+                                      new Date(editing.nextThingAt).getTime() + delta,
+                                    ).toISOString()
+                                  : "",
+                              });
+                            }}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>实际休息（分钟）</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={720}
+                            value={Math.max(
+                              1,
+                              Math.round(
+                                (new Date(editing.actualEndedAt).getTime() -
+                                  new Date(editing.startedAt).getTime()) /
+                                  60_000,
+                              ),
+                            )}
+                            onChange={(event) => {
+                              const minutes = Math.min(
+                                720,
+                                Math.max(1, Math.round(Number(event.target.value) || 1)),
+                              );
+                              setEditing({
+                                ...editing,
+                                actualEndedAt: new Date(
+                                  new Date(editing.startedAt).getTime() + minutes * 60_000,
+                                ).toISOString(),
+                              });
+                            }}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>原计划（分钟）</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={720}
+                            value={editing.plannedMinutes}
+                            onChange={(event) => {
+                              const minutes = Math.min(
+                                720,
+                                Math.max(1, Math.round(Number(event.target.value) || 1)),
+                              );
+                              setEditing({
+                                ...editing,
+                                plannedMinutes: minutes,
+                                plannedWakeAt: new Date(
+                                  new Date(editing.startedAt).getTime() + minutes * 60_000,
+                                ).toISOString(),
+                              });
+                            }}
+                          />
+                        </label>
+                      </div>
                       <label className="field">
                         <span>休息结果</span>
                         <select

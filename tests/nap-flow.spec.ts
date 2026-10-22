@@ -24,12 +24,23 @@ test("completes a nap and saves the check-in locally", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "最近的休息" })).toBeVisible();
   await expect(page.getByText("自动测试记录")).toBeVisible();
+  await page.getByRole("button", { name: "编辑记录" }).click();
+  await page.getByRole("spinbutton", { name: "实际休息（分钟）" }).fill("12");
+  await page.getByRole("spinbutton", { name: "原计划（分钟）" }).fill("20");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect(page.getByText(/12\/20 分钟/)).toBeVisible();
   const savedRecords = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("neko-nap-records-v1") || "[]"),
   );
   expect(savedRecords).toHaveLength(1);
   expect(savedRecords[0]).toMatchObject({ outcome: "slept", status: "interrupted" });
   expect(await page.evaluate(() => localStorage.getItem("neko-nap-static-v1"))).toBe("true");
+  expect(
+    Math.round(
+      (Date.parse(savedRecords[0].actualEndedAt) - Date.parse(savedRecords[0].startedAt)) / 60_000,
+    ),
+  ).toBe(12);
+  expect(savedRecords[0].plannedMinutes).toBe(20);
 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "导出备份" }).click();
@@ -71,4 +82,21 @@ test("warns instead of silently losing data when device storage is blocked", asy
 
   await expect(page.getByRole("alert")).toContainText("这次更改没有成功保存在设备上");
   await expect(page.getByRole("alert")).toContainText("尽快导出备份");
+});
+
+test("reloads the core app while offline", async ({ page, context }) => {
+  await page.goto("./");
+  await page.getByText("安装与离线", { exact: true }).click();
+  await expect(page.getByText(/已可离线|准备中/)).toBeVisible();
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+  try {
+    await context.setOffline(true);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByRole("heading", { name: "neko nap" })).toBeVisible();
+    await expect(page.getByText("正在离线使用")).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
 });
