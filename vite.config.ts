@@ -4,13 +4,16 @@ import react from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
 
-const githubPagesBase = process.env.GITHUB_ACTIONS ? "/neko-nap/" : "/";
+const githubPagesBase = process.env["GITHUB_ACTIONS"] ? "/neko-nap/" : "/";
 
 export default defineConfig({
   base: githubPagesBase,
   server: {
     host: "::",
     port: 8080,
+  },
+  preview: {
+    host: "127.0.0.1",
   },
   css: {
     transformer: "lightningcss",

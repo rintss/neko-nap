@@ -24,5 +24,8 @@
 - [x] Establish the owner-controlled GitHub remote and GitHub Pages deployment
 - [x] Refresh README and PWA cache after the independent migration
 - [x] Remove the former platform's build/runtime coupling and add deploy smoke checks
+- [x] Ship v0.1.1 storage-failure warnings, stricter backup validation, and static-cat backup
+- [x] Remove collapsed controls from keyboard/accessibility navigation
+- [x] Gate deployment on mobile-browser tests for the complete nap flow
 - [ ] Optional future stage — Capacitor background audio and native wake alarms
 - [ ] Optional future stage — Supabase schema/RLS, auth, and cross-device sync

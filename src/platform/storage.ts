@@ -27,7 +27,9 @@ export function readJson<T>(key: string, fallback: T): T {
 
 export function writeJson(key: string, value: unknown) {
   try {
-    store()?.setItem(key, JSON.stringify(value));
+    const storage = store();
+    if (!storage) return false;
+    storage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
     return false; // quota exceeded or storage blocked
@@ -36,9 +38,12 @@ export function writeJson(key: string, value: unknown) {
 
 export function removeKey(key: string) {
   try {
-    store()?.removeItem(key);
+    const storage = store();
+    if (!storage) return false;
+    storage.removeItem(key);
+    return true;
   } catch {
-    /* storage unavailable */
+    return false;
   }
 }
 

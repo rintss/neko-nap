@@ -13,6 +13,7 @@ A gentle, local-first nap companion with ambient audio, an optional next-event b
 - Wake check-in with outcome, optional factors, and a short note
 - Editable and deletable local nap history with cautious pattern summaries
 - JSON backup export and non-destructive import
+- Strict backup validation plus a clear warning if browser storage is blocked or full
 - Remembered timer, sound, volume, and next-event preferences
 - Home-screen metadata and offline caching for the core app and built-in media
 - Reduced-motion support and a manual static-cat control
@@ -21,7 +22,8 @@ A gentle, local-first nap companion with ambient audio, an optional next-event b
 
 - Active naps, preferences, and history stay in browser storage on this device.
 - A selected custom audio file is stored in IndexedDB when the browser has enough space. It is never uploaded or included in JSON backups.
-- Importing a backup merges by record ID. Matching IDs use the imported version; unrelated existing records remain.
+- Importing a backup validates dates, record fields, and settings before it asks for confirmation, then merges by record ID. Matching IDs use the imported version; unrelated existing records remain.
+- JSON backups include the static-cat preference. Custom audio remains device-only and is deliberately excluded.
 - There are no accounts, analytics, or cloud synchronization.
 
 ## Browser limitations
@@ -39,7 +41,7 @@ bun install
 bun run dev
 ```
 
-Use `bun run lint`, `bun run build`, and `bun run smoke` before committing. The smoke check verifies the generated GitHub Pages shell, local media, icons, manifest, and offline worker. GitHub Actions repeats these checks and deploys `main` to GitHub Pages.
+Use `bun run lint`, `bun run build`, `bun run smoke`, and `bun run test:e2e` before committing. The artifact smoke check verifies the generated GitHub Pages shell, local media, icons, manifest, and offline worker. Playwright covers the mobile nap/check-in/history flow, malformed backup rejection, hidden-control accessibility, and blocked-storage warning. GitHub Actions runs both suites before deploying `main` to GitHub Pages.
 
 ## Stack
 

@@ -401,6 +401,22 @@
 .reliability-note strong {
   color: var(--foreground);
 }
+.storage-warning {
+  width: min(100%, 676px);
+  margin: 14px auto 4px;
+  padding: 13px 14px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid color-mix(in oklab, var(--destructive) 38%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--apricot) 14%, var(--card));
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.storage-warning strong {
+  color: var(--destructive);
+}
 .primary-button {
   min-height: 52px;
   border: 0;

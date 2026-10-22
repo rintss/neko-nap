@@ -94,6 +94,7 @@ type NekoNapBackup = {
   exportedAt: string;
   records: NapRecord[];
   preferences: Preferences;
+  still?: boolean;
 };
 
 const STORAGE_SESSION = STORAGE_KEYS.session;
@@ -106,6 +107,69 @@ const BUILT_IN_SOUNDS: Record<Exclude<SoundKind, "silence" | "local">, string> =
   rain: assetUrl("assets/rain-sound.mp3"),
   ocean: assetUrl("assets/ocean-waves.mp3"),
 };
+const OUTCOMES: Outcome[] = ["slept", "restedAwake", "couldNotRest", "unknown"];
+const SOUND_KINDS: SoundKind[] = ["purr", "rain", "ocean", "silence", "local"];
+
+function validDate(value: unknown) {
+  return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
+}
+
+function validRecord(value: unknown): value is NapRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<NapRecord>;
+  const startedAt = validDate(record.startedAt) ? Date.parse(record.startedAt!) : Number.NaN;
+  const plannedWakeAt = validDate(record.plannedWakeAt)
+    ? Date.parse(record.plannedWakeAt!)
+    : Number.NaN;
+  const actualEndedAt = validDate(record.actualEndedAt)
+    ? Date.parse(record.actualEndedAt!)
+    : Number.NaN;
+  return (
+    typeof record.id === "string" &&
+    record.id.trim().length > 0 &&
+    record.id.length <= 200 &&
+    Number.isFinite(startedAt) &&
+    Number.isFinite(plannedWakeAt) &&
+    Number.isFinite(actualEndedAt) &&
+    plannedWakeAt >= startedAt &&
+    actualEndedAt >= startedAt &&
+    Number.isInteger(record.plannedMinutes) &&
+    record.plannedMinutes! >= 1 &&
+    record.plannedMinutes! <= 720 &&
+    typeof record.nextThingLabel === "string" &&
+    record.nextThingLabel.length <= 28 &&
+    (record.nextThingAt === "" || validDate(record.nextThingAt)) &&
+    SOUND_KINDS.includes(record.soundKind as SoundKind) &&
+    OUTCOMES.includes(record.outcome as Outcome) &&
+    ["ended", "interrupted"].includes(record.status ?? "") &&
+    (record.factors === undefined ||
+      (Array.isArray(record.factors) &&
+        record.factors.length <= NAP_FACTORS.length &&
+        record.factors.every((factor) => typeof factor === "string" && factor.length <= 100))) &&
+    (record.note === undefined || (typeof record.note === "string" && record.note.length <= 500))
+  );
+}
+
+function validPreferences(value: unknown): value is Preferences {
+  if (!value || typeof value !== "object") return false;
+  const preferences = value as Partial<Preferences>;
+  return (
+    Number.isInteger(preferences.duration) &&
+    preferences.duration! >= 1 &&
+    preferences.duration! <= 720 &&
+    Number.isInteger(preferences.customDuration) &&
+    preferences.customDuration! >= 1 &&
+    preferences.customDuration! <= 720 &&
+    typeof preferences.custom === "boolean" &&
+    typeof preferences.nextEnabled === "boolean" &&
+    typeof preferences.nextLabel === "string" &&
+    preferences.nextLabel.length <= 28 &&
+    SOUND_KINDS.includes(preferences.soundKind as SoundKind) &&
+    Number.isFinite(preferences.volume) &&
+    preferences.volume! >= 0 &&
+    preferences.volume! <= 100
+  );
+}
 
 function safeRead<T>(key: string, fallback: T): T {
   return readJson(key, fallback);
@@ -197,6 +261,16 @@ function IconButton({
   );
 }
 
+function StorageWarning({ message }: { message: string }) {
+  if (!message) return null;
+  return (
+    <aside className="storage-warning" role="alert">
+      <strong>这次更改没有成功保存在设备上</strong>
+      <span>{message}</span>
+    </aside>
+  );
+}
+
 function NekoNap() {
   const [view, setView] = useState<"home" | "history">("home");
   const [session, setSession] = useState<NapSession | null>(null);
@@ -221,7 +295,15 @@ function NekoNap() {
   const [checkInNote, setCheckInNote] = useState("");
   const [dataMessage, setDataMessage] = useState("");
   const [audioStorageMessage, setAudioStorageMessage] = useState("");
+  const [storageMessage, setStorageMessage] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  function noteStorageResult(saved: boolean) {
+    if (!saved)
+      setStorageMessage(
+        "请暂时保持页面开启，并尽快导出备份。无痕模式、浏览器权限或储存空间不足都可能导致记录丢失。",
+      );
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -267,14 +349,18 @@ function NekoNap() {
 
   useEffect(() => {
     if (!hydrated) return;
-    if (session) writeJson(STORAGE_SESSION, session);
-    else removeKey(STORAGE_SESSION);
+    noteStorageResult(session ? writeJson(STORAGE_SESSION, session) : removeKey(STORAGE_SESSION));
   }, [session, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
-    writeJson(STORAGE_RECORDS, records);
+    noteStorageResult(writeJson(STORAGE_RECORDS, records));
   }, [records, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    noteStorageResult(writeJson(STORAGE_STATIC, still));
+  }, [hydrated, still]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -287,7 +373,7 @@ function NekoNap() {
       soundKind,
       volume,
     };
-    writeJson(STORAGE_PREFERENCES, preferences);
+    noteStorageResult(writeJson(STORAGE_PREFERENCES, preferences));
   }, [custom, customDuration, duration, hydrated, nextEnabled, nextLabel, soundKind, volume]);
 
   useEffect(() => {
@@ -324,6 +410,7 @@ function NekoNap() {
       exportedAt: new Date().toISOString(),
       records,
       preferences: currentPreferences(),
+      still,
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -337,19 +424,6 @@ function NekoNap() {
     setDataMessage(`已导出 ${records.length} 条记录。自选音频不会写入备份。`);
   }
 
-  function validRecord(value: unknown): value is NapRecord {
-    if (!value || typeof value !== "object") return false;
-    const record = value as Partial<NapRecord>;
-    return (
-      typeof record.id === "string" &&
-      typeof record.startedAt === "string" &&
-      typeof record.plannedWakeAt === "string" &&
-      typeof record.actualEndedAt === "string" &&
-      typeof record.plannedMinutes === "number" &&
-      ["slept", "restedAwake", "couldNotRest", "unknown"].includes(record.outcome ?? "")
-    );
-  }
-
   async function importBackup(file: File) {
     try {
       const parsed = JSON.parse(await file.text()) as Partial<NekoNapBackup>;
@@ -357,6 +431,10 @@ function NekoNap() {
         throw new Error("这不是 Neko Nap v1 备份");
       const imported = parsed.records.filter(validRecord);
       if (imported.length !== parsed.records.length) throw new Error("备份中有无法识别的记录");
+      if (parsed.preferences !== undefined && !validPreferences(parsed.preferences))
+        throw new Error("备份中的设置格式不正确");
+      if (parsed.still !== undefined && typeof parsed.still !== "boolean")
+        throw new Error("备份中的动画设置格式不正确");
       if (
         !window.confirm(
           `将导入 ${imported.length} 条记录。相同 ID 的记录会以备份版本为准，其余记录会保留。继续吗？`,
@@ -373,21 +451,18 @@ function NekoNap() {
       });
 
       const preferences = parsed.preferences;
-      if (preferences && typeof preferences === "object") {
-        if (Number.isFinite(preferences.duration))
-          setDuration(Math.min(720, Math.max(1, preferences.duration!)));
-        if (Number.isFinite(preferences.customDuration))
-          setCustomDuration(Math.min(720, Math.max(1, preferences.customDuration!)));
-        if (typeof preferences.custom === "boolean") setCustom(preferences.custom);
-        if (typeof preferences.nextEnabled === "boolean") setNextEnabled(preferences.nextEnabled);
-        if (typeof preferences.nextLabel === "string") setNextLabel(preferences.nextLabel);
-        if (Number.isFinite(preferences.volume))
-          setVolume(Math.min(100, Math.max(0, preferences.volume!)));
-        if (["purr", "rain", "ocean", "silence", "local"].includes(preferences.soundKind))
-          setSoundKind(
-            preferences.soundKind === "local" && !localAudio ? "purr" : preferences.soundKind,
-          );
+      if (preferences) {
+        setDuration(preferences.duration);
+        setCustomDuration(preferences.customDuration);
+        setCustom(preferences.custom);
+        setNextEnabled(preferences.nextEnabled);
+        setNextLabel(preferences.nextLabel);
+        setVolume(preferences.volume);
+        setSoundKind(
+          preferences.soundKind === "local" && !localAudio ? "purr" : preferences.soundKind,
+        );
       }
+      if (typeof parsed.still === "boolean") setStill(parsed.still);
       setDataMessage(`导入完成：已读取 ${imported.length} 条记录。`);
     } catch (error) {
       setDataMessage(error instanceof Error ? `无法导入：${error.message}` : "无法读取这个备份。");
@@ -512,6 +587,7 @@ function NekoNap() {
         onExport={exportBackup}
         onImport={importBackup}
         dataMessage={dataMessage}
+        storageMessage={storageMessage}
         onHome={() => setView("home")}
       />
     );
@@ -525,14 +601,13 @@ function NekoNap() {
           <IconButton
             label="切换猫咪动画"
             onClick={() => {
-              const value = !still;
-              setStill(value);
-              writeJson(STORAGE_STATIC, value);
+              setStill((value) => !value);
             }}
           >
             {still ? <Play size={18} /> : <Pause size={18} />}
           </IconButton>
         </header>
+        <StorageWarning message={storageMessage} />
         <section className="sleeping-stage">
           <Cat active still={still} />
           <div className="quiet-time">
@@ -543,6 +618,7 @@ function NekoNap() {
             <button
               className="next-thing-line"
               type="button"
+              aria-expanded={showControls}
               onClick={() => setShowControls((value) => !value)}
             >
               <span>
@@ -551,15 +627,21 @@ function NekoNap() {
               <ChevronDown size={17} className={showControls ? "rotate-180" : ""} />
             </button>
           )}
-          <div className={`secondary-controls ${showControls ? "secondary-controls-open" : ""}`}>
-            <button className="soft-control" type="button" onClick={toggleAudio}>
-              {audioPaused ? <VolumeX size={18} /> : <Volume2 size={18} />}
-              {audioPaused ? "继续声音" : "暂停声音"}
-            </button>
-            <button className="soft-control" type="button" onClick={() => finishNap("interrupted")}>
-              <X size={18} /> 提前结束
-            </button>
-          </div>
+          {showControls && (
+            <div className="secondary-controls secondary-controls-open">
+              <button className="soft-control" type="button" onClick={toggleAudio}>
+                {audioPaused ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                {audioPaused ? "继续声音" : "暂停声音"}
+              </button>
+              <button
+                className="soft-control"
+                type="button"
+                onClick={() => finishNap("interrupted")}
+              >
+                <X size={18} /> 提前结束
+              </button>
+            </div>
+          )}
         </section>
         {!showControls && (
           <button
@@ -567,6 +649,7 @@ function NekoNap() {
             type="button"
             onClick={() => setShowControls(true)}
             aria-label="展开其他控制"
+            aria-expanded={false}
           >
             <Settings2 size={18} />
           </button>
@@ -582,6 +665,7 @@ function NekoNap() {
         <header className="focus-header">
           <span className="wordmark">neko nap</span>
         </header>
+        <StorageWarning message={storageMessage} />
         <section className="sleeping-stage wake-stage">
           <Cat awake still={still} />
           <div className="wake-copy">
@@ -665,6 +749,7 @@ function NekoNap() {
         </div>
         <Cat still />
       </header>
+      <StorageWarning message={storageMessage} />
 
       <section className="setup-section" aria-labelledby="duration-title">
         <div className="section-heading">
@@ -948,6 +1033,7 @@ function HistoryView({
   onExport,
   onImport,
   dataMessage,
+  storageMessage,
   onHome,
 }: {
   records: NapRecord[];
@@ -956,6 +1042,7 @@ function HistoryView({
   onExport: () => void;
   onImport: (file: File) => Promise<void>;
   dataMessage: string;
+  storageMessage: string;
   onHome: () => void;
 }) {
   const [editing, setEditing] = useState<NapRecord | null>(null);
@@ -977,6 +1064,7 @@ function HistoryView({
         </div>
         <span className="history-count">{records.length} 次</span>
       </header>
+      <StorageWarning message={storageMessage} />
       <section className="data-tools" aria-label="备份与恢复">
         <button className="soft-control" type="button" onClick={onExport}>
           <Download size={17} /> 导出备份
@@ -1113,7 +1201,11 @@ function HistoryView({
                           className="primary-button"
                           type="button"
                           onClick={() => {
-                            onUpdate({ ...editing, note: editing.note?.trim() });
+                            const note = editing.note?.trim();
+                            const updated = { ...editing };
+                            if (note) updated.note = note;
+                            else delete updated.note;
+                            onUpdate(updated);
                             setEditing(null);
                           }}
                         >
