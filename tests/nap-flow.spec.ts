@@ -97,7 +97,7 @@ test("saves a YouTube BGM and prepares it for autoplay", async ({ page }) => {
   await expect(page.getByText("已保存在这台设备，并设为当前 BGM。")).toBeVisible();
 
   await page.reload();
-  await expect(page.getByRole("button", { name: /测试钢琴/ })).toBeVisible();
+  await expect(page.locator(".youtube-track > button:first-child")).toContainText("测试钢琴");
   const preferences = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("neko-nap-preferences-v1") || "{}"),
   );
