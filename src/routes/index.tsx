@@ -20,6 +20,7 @@ import {
   Smartphone,
   Trash2,
   Upload,
+  Youtube,
   Volume2,
   VolumeX,
   X,
@@ -47,8 +48,14 @@ export const Route = createFileRoute("/")({
 });
 
 type Outcome = "slept" | "restedAwake" | "couldNotRest" | "unknown";
-type SoundKind = "purr" | "rain" | "ocean" | "silence" | "local";
+type SoundKind = "purr" | "rain" | "ocean" | "silence" | "local" | "youtube";
 type SessionStatus = "running" | "wake";
+
+type YoutubeTrack = {
+  id: string;
+  videoId: string;
+  title: string;
+};
 
 const NAP_FACTORS = [
   "本来就很困",
@@ -67,6 +74,8 @@ type NapSession = {
   nextThingLabel: string;
   nextThingAt: string;
   soundKind: SoundKind;
+  youtubeVideoId?: string;
+  youtubeTitle?: string;
   status: SessionStatus;
 };
 
@@ -87,6 +96,8 @@ type Preferences = {
   nextLabel: string;
   soundKind: SoundKind;
   volume: number;
+  youtubeTracks?: YoutubeTrack[];
+  selectedYoutubeTrackId?: string;
 };
 
 type NekoNapBackup = {
@@ -108,13 +119,59 @@ const STORAGE_RECORDS = STORAGE_KEYS.records;
 const STORAGE_STATIC = STORAGE_KEYS.still;
 const STORAGE_PREFERENCES = STORAGE_KEYS.preferences;
 const assetUrl = (path: string) => `${import.meta.env.BASE_URL}${path}`;
-const BUILT_IN_SOUNDS: Record<Exclude<SoundKind, "silence" | "local">, string> = {
+const BUILT_IN_SOUNDS: Record<Exclude<SoundKind, "silence" | "local" | "youtube">, string> = {
   purr: assetUrl("assets/cat-purring.mp3"),
   rain: assetUrl("assets/rain-sound.mp3"),
   ocean: assetUrl("assets/ocean-waves.mp3"),
 };
 const OUTCOMES: Outcome[] = ["slept", "restedAwake", "couldNotRest", "unknown"];
-const SOUND_KINDS: SoundKind[] = ["purr", "rain", "ocean", "silence", "local"];
+const SOUND_KINDS: SoundKind[] = ["purr", "rain", "ocean", "silence", "local", "youtube"];
+
+function validYoutubeTrack(value: unknown): value is YoutubeTrack {
+  if (!value || typeof value !== "object") return false;
+  const track = value as Partial<YoutubeTrack>;
+  return (
+    typeof track.id === "string" &&
+    track.id.length > 0 &&
+    track.id.length <= 200 &&
+    typeof track.videoId === "string" &&
+    /^[\w-]{11}$/.test(track.videoId) &&
+    typeof track.title === "string" &&
+    track.title.trim().length > 0 &&
+    track.title.length <= 80
+  );
+}
+
+function parseYoutubeVideoId(value: string) {
+  try {
+    const url = new URL(value.trim());
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    let videoId = "";
+    if (hostname === "youtu.be") videoId = url.pathname.split("/").filter(Boolean)[0] ?? "";
+    else if (["youtube.com", "m.youtube.com", "music.youtube.com"].includes(hostname)) {
+      if (url.pathname === "/watch") videoId = url.searchParams.get("v") ?? "";
+      else {
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (["embed", "shorts", "live"].includes(parts[0] ?? "")) videoId = parts[1] ?? "";
+      }
+    }
+    return /^[\w-]{11}$/.test(videoId) ? videoId : null;
+  } catch {
+    return null;
+  }
+}
+
+function youtubeEmbedUrl(videoId: string, autoplay: boolean) {
+  const params = new URLSearchParams({
+    autoplay: autoplay ? "1" : "0",
+    controls: "1",
+    loop: "1",
+    playlist: videoId,
+    playsinline: "1",
+    rel: "0",
+  });
+  return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`;
+}
 
 function validDate(value: unknown) {
   return typeof value === "string" && value.length > 0 && Number.isFinite(Date.parse(value));
@@ -146,6 +203,9 @@ function validRecord(value: unknown): value is NapRecord {
     record.nextThingLabel.length <= 28 &&
     (record.nextThingAt === "" || validDate(record.nextThingAt)) &&
     SOUND_KINDS.includes(record.soundKind as SoundKind) &&
+    (record.youtubeVideoId === undefined || /^[\w-]{11}$/.test(record.youtubeVideoId)) &&
+    (record.youtubeTitle === undefined ||
+      (typeof record.youtubeTitle === "string" && record.youtubeTitle.length <= 80)) &&
     OUTCOMES.includes(record.outcome as Outcome) &&
     ["ended", "interrupted"].includes(record.status ?? "") &&
     (record.factors === undefined ||
@@ -173,7 +233,14 @@ function validPreferences(value: unknown): value is Preferences {
     SOUND_KINDS.includes(preferences.soundKind as SoundKind) &&
     Number.isFinite(preferences.volume) &&
     preferences.volume! >= 0 &&
-    preferences.volume! <= 100
+    preferences.volume! <= 100 &&
+    (preferences.youtubeTracks === undefined ||
+      (Array.isArray(preferences.youtubeTracks) &&
+        preferences.youtubeTracks.length <= 100 &&
+        preferences.youtubeTracks.every(validYoutubeTrack))) &&
+    (preferences.selectedYoutubeTrackId === undefined ||
+      (typeof preferences.selectedYoutubeTrackId === "string" &&
+        preferences.selectedYoutubeTrackId.length <= 200))
   );
 }
 
@@ -291,6 +358,12 @@ function NekoNap() {
   const [soundKind, setSoundKind] = useState<SoundKind>("purr");
   const [volume, setVolume] = useState(35);
   const [localAudio, setLocalAudio] = useState<File | null>(null);
+  const [youtubeTracks, setYoutubeTracks] = useState<YoutubeTrack[]>([]);
+  const [selectedYoutubeTrackId, setSelectedYoutubeTrackId] = useState("");
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [youtubeTitle, setYoutubeTitle] = useState("");
+  const [youtubeMessage, setYoutubeMessage] = useState("");
+  const [youtubeAutoplay, setYoutubeAutoplay] = useState(false);
   const [audioPaused, setAudioPaused] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const [still, setStill] = useState(false);
@@ -332,11 +405,22 @@ function NekoNap() {
       setNextEnabled(preferences.nextEnabled ?? false);
       setNextLabel(preferences.nextLabel || "出门");
       setVolume(Math.min(100, Math.max(0, preferences.volume ?? 35)));
+      const restoredYoutubeTracks = Array.isArray(preferences.youtubeTracks)
+        ? preferences.youtubeTracks.filter(validYoutubeTrack)
+        : [];
+      setYoutubeTracks(restoredYoutubeTracks);
+      setSelectedYoutubeTrackId(
+        restoredYoutubeTracks.some((track) => track.id === preferences.selectedYoutubeTrackId)
+          ? (preferences.selectedYoutubeTrackId ?? "")
+          : (restoredYoutubeTracks[0]?.id ?? ""),
+      );
       setLocalAudio(restoredAudio);
       setSoundKind(
         preferences.soundKind === "local" && !restoredAudio
           ? "purr"
-          : (preferences.soundKind ?? "purr"),
+          : preferences.soundKind === "youtube" && restoredYoutubeTracks.length === 0
+            ? "purr"
+            : (preferences.soundKind ?? "purr"),
       );
 
       // Browsers block autoplay after a reload. Make that state explicit and expose
@@ -344,6 +428,7 @@ function NekoNap() {
       if (restoredSession?.status === "running") {
         setAudioPaused(true);
         setShowControls(true);
+        setYoutubeAutoplay(false);
       }
       setHydrated(true);
     })();
@@ -419,9 +504,22 @@ function NekoNap() {
       nextLabel,
       soundKind,
       volume,
+      youtubeTracks,
+      selectedYoutubeTrackId,
     };
     noteStorageResult(writeJson(STORAGE_PREFERENCES, preferences));
-  }, [custom, customDuration, duration, hydrated, nextEnabled, nextLabel, soundKind, volume]);
+  }, [
+    custom,
+    customDuration,
+    duration,
+    hydrated,
+    nextEnabled,
+    nextLabel,
+    selectedYoutubeTrackId,
+    soundKind,
+    volume,
+    youtubeTracks,
+  ]);
 
   useEffect(() => {
     if (!session || session.status !== "running") return;
@@ -437,6 +535,8 @@ function NekoNap() {
   const bufferMinutes = nextEnabled
     ? Math.round((new Date(nextAt).getTime() - wakeAt.getTime()) / 60_000)
     : null;
+  const selectedYoutubeTrack =
+    youtubeTracks.find((track) => track.id === selectedYoutubeTrackId) ?? null;
 
   function currentPreferences(): Preferences {
     return {
@@ -447,6 +547,8 @@ function NekoNap() {
       nextLabel,
       soundKind,
       volume,
+      youtubeTracks,
+      selectedYoutubeTrackId,
     };
   }
 
@@ -468,7 +570,9 @@ function NekoNap() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setDataMessage(`已导出 ${records.length} 条记录。自选音频不会写入备份。`);
+    setDataMessage(
+      `已导出 ${records.length} 条记录。YouTube BGM 会随设置备份；设备里的自选音频不会。`,
+    );
   }
 
   async function importBackup(file: File) {
@@ -505,8 +609,19 @@ function NekoNap() {
         setNextEnabled(preferences.nextEnabled);
         setNextLabel(preferences.nextLabel);
         setVolume(preferences.volume);
+        const importedYoutubeTracks = preferences.youtubeTracks ?? [];
+        setYoutubeTracks(importedYoutubeTracks);
+        setSelectedYoutubeTrackId(
+          importedYoutubeTracks.some((track) => track.id === preferences.selectedYoutubeTrackId)
+            ? (preferences.selectedYoutubeTrackId ?? "")
+            : (importedYoutubeTracks[0]?.id ?? ""),
+        );
         setSoundKind(
-          preferences.soundKind === "local" && !localAudio ? "purr" : preferences.soundKind,
+          preferences.soundKind === "local" && !localAudio
+            ? "purr"
+            : preferences.soundKind === "youtube" && importedYoutubeTracks.length === 0
+              ? "purr"
+              : preferences.soundKind,
         );
       }
       if (typeof parsed.still === "boolean") setStill(parsed.still);
@@ -517,7 +632,7 @@ function NekoNap() {
   }
 
   function getAudioElement(kind: SoundKind = soundKind) {
-    if (kind === "silence") return null;
+    if (kind === "silence" || kind === "youtube") return null;
     const source =
       kind === "local"
         ? localAudio
@@ -539,6 +654,38 @@ function NekoNap() {
     return audioRef.current;
   }
 
+  function addYoutubeTrack() {
+    const videoId = parseYoutubeVideoId(youtubeUrl);
+    if (!videoId) {
+      setYoutubeMessage("这个链接里没有找到可识别的 YouTube 视频 ID。");
+      return;
+    }
+    const existing = youtubeTracks.find((track) => track.videoId === videoId);
+    if (existing) {
+      setSelectedYoutubeTrackId(existing.id);
+      setYoutubeMessage("这条已经存过了，已帮你选中。");
+      return;
+    }
+    const track: YoutubeTrack = {
+      id: newId(),
+      videoId,
+      title: youtubeTitle.trim() || `YouTube BGM ${youtubeTracks.length + 1}`,
+    };
+    setYoutubeTracks((tracks) => [...tracks, track]);
+    setSelectedYoutubeTrackId(track.id);
+    setYoutubeUrl("");
+    setYoutubeTitle("");
+    setYoutubeMessage("已保存在这台设备，并设为当前 BGM。");
+  }
+
+  function deleteYoutubeTrack(track: YoutubeTrack) {
+    if (!window.confirm(`删除“${track.title}”吗？`)) return;
+    const remaining = youtubeTracks.filter((item) => item.id !== track.id);
+    setYoutubeTracks(remaining);
+    if (selectedYoutubeTrackId === track.id) setSelectedYoutubeTrackId(remaining[0]?.id ?? "");
+    setYoutubeMessage("已从这台设备删除。");
+  }
+
   function playWakeTone() {
     triggerWakeAlert();
   }
@@ -548,11 +695,15 @@ function NekoNap() {
   }
 
   function startNap() {
+    if (soundKind === "youtube" && !selectedYoutubeTrack) {
+      setYoutubeMessage("请先保存并选择一条 YouTube BGM。");
+      return;
+    }
     const startedAt = new Date();
     const plannedWakeAt = new Date(startedAt.getTime() + actualDuration * 60_000);
     const nextDate = nextEnabled ? new Date(nextAt) : null;
     setAudioPaused(false);
-    setSession({
+    const nextSession: NapSession = {
       startedAt: startedAt.toISOString(),
       plannedWakeAt: plannedWakeAt.toISOString(),
       plannedMinutes: actualDuration,
@@ -560,7 +711,13 @@ function NekoNap() {
       nextThingAt: nextDate && !Number.isNaN(nextDate.getTime()) ? nextDate.toISOString() : "",
       soundKind,
       status: "running",
-    });
+    };
+    if (soundKind === "youtube" && selectedYoutubeTrack) {
+      nextSession.youtubeVideoId = selectedYoutubeTrack.videoId;
+      nextSession.youtubeTitle = selectedYoutubeTrack.title;
+      setYoutubeAutoplay(true);
+    }
+    setSession(nextSession);
     const el = getAudioElement(soundKind);
     if (el) sound.playElement(el, volume);
     else sound.stopSound();
@@ -611,6 +768,7 @@ function NekoNap() {
   }
 
   function toggleAudio() {
+    if (session?.soundKind === "youtube") return;
     if (audioPaused) {
       setAudioPaused(false);
       const el = session ? getAudioElement(session.soundKind) : null;
@@ -657,7 +815,13 @@ function NekoNap() {
           </IconButton>
         </header>
         <StorageWarning message={storageMessage} />
-        <section className="sleeping-stage">
+        <section
+          className={
+            session.soundKind === "youtube"
+              ? "sleeping-stage sleeping-stage-youtube"
+              : "sleeping-stage"
+          }
+        >
           <Cat active still={still} />
           <div className="quiet-time">
             <span>醒来时间</span>
@@ -676,12 +840,29 @@ function NekoNap() {
               <ChevronDown size={17} className={showControls ? "rotate-180" : ""} />
             </button>
           )}
+          {session.soundKind === "youtube" && session.youtubeVideoId && (
+            <section className="youtube-player-card" aria-label="YouTube BGM 播放器">
+              <iframe
+                title={session.youtubeTitle || "YouTube BGM"}
+                src={youtubeEmbedUrl(session.youtubeVideoId, youtubeAutoplay)}
+                allow="autoplay; encrypted-media; picture-in-picture"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+              />
+              <p>
+                <strong>{session.youtubeTitle || "YouTube BGM"}</strong>
+                <span>没自动播放的话，点播放器中央；音量也请在播放器里调。</span>
+              </p>
+            </section>
+          )}
           {showControls && (
             <div className="secondary-controls secondary-controls-open">
-              <button className="soft-control" type="button" onClick={toggleAudio}>
-                {audioPaused ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                {audioPaused ? "继续声音" : "暂停声音"}
-              </button>
+              {session.soundKind !== "youtube" && (
+                <button className="soft-control" type="button" onClick={toggleAudio}>
+                  {audioPaused ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                  {audioPaused ? "继续声音" : "暂停声音"}
+                </button>
+              )}
               <button
                 className="soft-control"
                 type="button"
@@ -952,6 +1133,20 @@ function NekoNap() {
             </span>
             <i />
           </button>
+          <button
+            type="button"
+            className={soundKind === "youtube" ? "sound-choice selected" : "sound-choice"}
+            onClick={() => {
+              setSoundKind("youtube");
+              setYoutubeMessage("");
+            }}
+          >
+            <span>
+              <Youtube size={18} />
+              YouTube BGM
+            </span>
+            <i />
+          </button>
           <label
             className={
               soundKind === "local"
@@ -983,8 +1178,83 @@ function NekoNap() {
             />
           </label>
         </div>
+        {soundKind === "youtube" && (
+          <section className="youtube-library animate-fade-in" aria-label="YouTube BGM 收藏">
+            <div className="youtube-add-grid">
+              <label className="field">
+                <span>YouTube 链接</span>
+                <input
+                  type="url"
+                  inputMode="url"
+                  value={youtubeUrl}
+                  placeholder="https://youtu.be/…"
+                  onChange={(event) => setYoutubeUrl(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>收藏名称（可选）</span>
+                <input
+                  value={youtubeTitle}
+                  maxLength={80}
+                  placeholder="例如：深夜钢琴"
+                  onChange={(event) => setYoutubeTitle(event.target.value)}
+                />
+              </label>
+              <button className="soft-control youtube-save" type="button" onClick={addYoutubeTrack}>
+                <Save size={17} /> 保存 BGM
+              </button>
+            </div>
+            {youtubeMessage && (
+              <p className="youtube-message" role="status">
+                {youtubeMessage}
+              </p>
+            )}
+            {youtubeTracks.length > 0 ? (
+              <div className="youtube-track-list">
+                {youtubeTracks.map((track) => (
+                  <div
+                    className={
+                      track.id === selectedYoutubeTrackId
+                        ? "youtube-track youtube-track-selected"
+                        : "youtube-track"
+                    }
+                    key={track.id}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={track.id === selectedYoutubeTrackId}
+                      onClick={() => {
+                        setSelectedYoutubeTrackId(track.id);
+                        setYoutubeMessage(`已选择“${track.title}”。`);
+                      }}
+                    >
+                      <Youtube size={17} />
+                      <span>
+                        <strong>{track.title}</strong>
+                        <small>youtube.com/watch?v={track.videoId}</small>
+                      </span>
+                      <i />
+                    </button>
+                    <IconButton
+                      label={`删除 ${track.title}`}
+                      onClick={() => deleteYoutubeTrack(track)}
+                    >
+                      <Trash2 size={15} />
+                    </IconButton>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="youtube-empty">还没有收藏。贴一条视频链接就好，不需要 API key。</p>
+            )}
+            <p className="field-hint youtube-privacy-note">
+              开始 nap
+              时才会联网载入隐私增强播放器。能否自动播放或站外播放仍由浏览器和视频作者决定。
+            </p>
+          </section>
+        )}
         {audioStorageMessage && <p className="field-hint">{audioStorageMessage}</p>}
-        {soundKind !== "silence" && (
+        {soundKind !== "silence" && soundKind !== "youtube" && (
           <label className="volume-control">
             <Volume2 size={18} />
             <input
@@ -1003,7 +1273,7 @@ function NekoNap() {
             <span>{volume}%</span>
           </label>
         )}
-        {soundKind !== "silence" && (
+        {soundKind !== "silence" && soundKind !== "youtube" && (
           <button
             type="button"
             className="soft-control"
@@ -1013,7 +1283,7 @@ function NekoNap() {
             试听 4 秒
           </button>
         )}
-        {soundKind !== "silence" && (
+        {soundKind !== "silence" && soundKind !== "youtube" && (
           <p className="field-hint">听不到的话：检查手机侧边音量键和静音开关。</p>
         )}
       </section>
@@ -1201,6 +1471,7 @@ function HistoryView({
                 ocean: "海浪声",
                 local: "本地音频",
                 silence: "安静",
+                youtube: record.youtubeTitle ? `YouTube · ${record.youtubeTitle}` : "YouTube BGM",
               }[record.soundKind];
               return (
                 <div className="record-block" key={record.id}>

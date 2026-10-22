@@ -84,6 +84,40 @@ test("warns instead of silently losing data when device storage is blocked", asy
   await expect(page.getByRole("alert")).toContainText("尽快导出备份");
 });
 
+test("saves a YouTube BGM and prepares it for autoplay", async ({ page }) => {
+  await page.route("https://www.youtube-nocookie.com/**", (route) => route.abort());
+  await page.goto("./");
+
+  await page.getByRole("button", { name: "YouTube BGM" }).click();
+  await page
+    .getByRole("textbox", { name: "YouTube 链接" })
+    .fill("https://youtu.be/M7lc1UVf-VE?t=12");
+  await page.getByRole("textbox", { name: "收藏名称（可选）" }).fill("测试钢琴");
+  await page.getByRole("button", { name: "保存 BGM" }).click();
+  await expect(page.getByText("已保存在这台设备，并设为当前 BGM。")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByRole("button", { name: /测试钢琴/ })).toBeVisible();
+  const preferences = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("neko-nap-preferences-v1") || "{}"),
+  );
+  expect(preferences.soundKind).toBe("youtube");
+  expect(preferences.youtubeTracks).toEqual([
+    expect.objectContaining({ videoId: "M7lc1UVf-VE", title: "测试钢琴" }),
+  ]);
+
+  await page.getByRole("button", { name: "自定义" }).click();
+  await page.getByRole("spinbutton", { name: "分钟（1–720）" }).fill("1");
+  await page.getByRole("button", { name: /开始 nap/ }).click();
+  const player = page.getByTitle("测试钢琴");
+  await expect(player).toBeVisible();
+  await expect(player).toHaveAttribute(
+    "src",
+    /youtube-nocookie\.com\/embed\/M7lc1UVf-VE\?.*autoplay=1/,
+  );
+  await expect(page.getByText("没自动播放的话，点播放器中央")).toBeVisible();
+});
+
 test("reloads the core app while offline", async ({ page, context }) => {
   await page.goto("./");
   await page.getByText("安装与离线", { exact: true }).click();
