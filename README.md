@@ -4,6 +4,8 @@ A gentle, local-first nap companion with ambient audio, an optional next-event b
 
 **Live app:** https://rintss.github.io/neko-nap/
 
+Read [`BUILD_LOG.md`](BUILD_LOG.md) before changing timers, storage, audio, PWA, backup, or deployment behaviour.
+
 ## Current features
 
 - 20, 45, and 90 minute presets plus a 1–720 minute custom timer
